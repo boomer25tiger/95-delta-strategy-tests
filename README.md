@@ -34,7 +34,7 @@ a permanent replacement for owning one.**
   starting capital in the median case after 15 years while losing 90% or more in 18.7%
   of them.
 
-Where the structure genuinely earns a place is in expressing a directional view on a
+The structure earns its place in expressing a directional view on a
 specific asset with a known maximum loss over a window I choose, because the costs
 that barely register across a few months are the same ones that decide the outcome
 across years.
@@ -49,7 +49,7 @@ the largest single lever in the study, I fixed four surface scenarios in
 [SPEC.md](SPEC.md) Section 5.1 before running anything, and every headline figure
 carries its spread across those four.
 
-## What I found
+## What I discovered
 
 ### Taxes decide the comparison
 
@@ -77,7 +77,7 @@ to $55 a year per $10,000, against about $60 a year of dividend drag alone. The
 elaborate surface barely registers at 1x, yet leverage compounds that same assumption
 until it swamps everything else.
 
-### Leverage turns it into a lottery, and two historical paths could not show that
+### Leverage turns it into a lottery
 
 Both start years run to 2026, which makes 2011 a nested slice of 2001 rather than an
 independent sample, so no amount of care with those two paths can support a
@@ -110,9 +110,9 @@ and the report shows their spread while keeping them out of the headline.
 
 ![Sensitivity](figures/fig4_sensitivity.png)
 
-### What this means in practice
+### What does this mean in practice?
 
-The capital efficiency is real, and the same efficiency explains why the substitution
+The capital efficiency of buying 95 delta calls is real, but that same efficiency explains why the substitution
 fails over long horizons. Freeing capital only pays when the freed capital earns more
 than the option's carry, and since the option's embedded financing sits at about the
 same short rate that idle cash earns, the two offset at 1x and the drag items decide
