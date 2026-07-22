@@ -9,6 +9,7 @@ and a multiplicative term_factor overstates long-dated vol in inverted (crisis)
 regimes; both are documented simplifications of a richer surface.
 """
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -40,8 +41,13 @@ def _moneyness(K, S, kind):
 def sigma(K, S, T, atm_vol, p=VolParams()):
     """Total IV for strike K given decimal ATM vol atm_vol at the date. K may be
     scalar or array. atm_vol is VXN (or VIX fallback) as a decimal, not percent."""
-    s = atm_vol * term_factor(T, p) + p.skew_slope * _moneyness(K, S, p.moneyness)
-    return np.maximum(s, p.vol_floor)
+    if isinstance(K, np.ndarray) or isinstance(S, np.ndarray):
+        s = atm_vol * term_factor(T, p) + p.skew_slope * _moneyness(K, S, p.moneyness)
+        return np.maximum(s, p.vol_floor)
+    # scalar fast path: same expressions via math, avoiding numpy scalar overhead
+    m = math.log(K / S) if p.moneyness == "log" else (K - S) / S
+    s = atm_vol * (1.0 + p.term_slope * math.log(T / T_ATM)) + p.skew_slope * m
+    return s if s > p.vol_floor else p.vol_floor
 
 
 def atm_vol_series(target_index=None, source="vxn", force_refresh=False):

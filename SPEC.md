@@ -202,6 +202,13 @@ quote to a decimal continuous rate for the engine.
    near recent levels) combined with after-tax erosion the account can fall below one
    contract's cost and be forced entirely to cash. Such degenerate runs are flagged by
    the reported cash fraction, not silently scored as strategy performance.
+7. The PMCC short leg is sold at the model's VXN/VIX-implied vol and marked at that
+   same vol, so it captures only the realized implied-minus-realized spread, which is
+   small in sample (mean VXN 21.32% vs 20.79% realized QQQ vol over 2011-2026, a
+   0.53-point spread). Measured net short-leg P&L is near zero. Real covered-call
+   income leans heavily on the variance risk premium, which this model barely
+   represents, so the PMCC's income case is understated and what remains is
+   essentially the delta reduction and the volatility-drag effect.
 
 ---
 

@@ -62,6 +62,14 @@ def bs_greeks(S, K, T, r, sigma, q=0.0, kind="call"):
     return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
 
 
+def bs_delta(S, K, T, r, sigma, q=0.0, kind="call"):
+    """Delta only, identical expression to bs_greeks()['delta'] but without the
+    other four Greeks (hot path in the strike solver and leverage tracking)."""
+    d1, _ = _d1_d2(S, K, T, r, q, sigma)
+    df_q = math.exp(-q * T)
+    return df_q * _norm_cdf(d1) if kind == "call" else -df_q * _norm_cdf(-d1)
+
+
 def black76_price(F, K, T, r, sigma, kind="call"):
     return bs_price(F, K, T, r, sigma, q=r, kind=kind)
 
@@ -80,15 +88,26 @@ def _baw_call_critical(X, T, r, b, sigma):
     q2 = (-(NN - 1.0) + math.sqrt((NN - 1.0) ** 2 + 4.0 * MM / KK)) / 2.0
     q2_inf = (-(NN - 1.0) + math.sqrt((NN - 1.0) ** 2 + 4.0 * MM)) / 2.0
     S_inf = X / (1.0 - 1.0 / q2_inf)
-    h2 = -(b * T + 2.0 * sigma * math.sqrt(T)) * X / (S_inf - X)
-    Si = X + (S_inf - X) * (1.0 - math.exp(h2))
     sqrtT = math.sqrt(T)
+    h2 = -(b * T + 2.0 * sigma * sqrtT) * X / (S_inf - X)
+    Si = X + (S_inf - X) * (1.0 - math.exp(h2))
+    # Loop invariants hoisted, and the European leg inlined in the same operand
+    # forms bs_price/_d1_d2 use, so the arithmetic stays bit-identical.
+    qq = r - b
+    v = sigma * sqrtT
+    c_loop = (b + 0.5 * sig2) * T
+    c_bs = (r - qq + 0.5 * sigma * sigma) * T
+    df_q = math.exp(-qq * T)
+    df_r = math.exp(-r * T)
+    inv_q2 = 1.0 / q2
     for _ in range(100):
-        d1 = (math.log(Si / X) + (b + 0.5 * sig2) * T) / (sigma * sqrtT)
-        eul = bs_price(Si, X, T, r, sigma, q=r - b, kind="call")
-        rhs = eul + (1.0 - math.exp((b - r) * T) * _norm_cdf(d1)) * Si / q2
-        bi = (math.exp((b - r) * T) * _norm_cdf(d1) * (1.0 - 1.0 / q2)
-              + (1.0 - math.exp((b - r) * T) * _norm_pdf(d1) / (sigma * sqrtT)) / q2)
+        lg = math.log(Si / X)
+        d1 = (lg + c_loop) / v
+        d1p = (lg + c_bs) / v
+        eul = Si * df_q * _norm_cdf(d1p) - X * df_r * _norm_cdf(d1p - v)
+        nd1 = _norm_cdf(d1)
+        rhs = eul + (1.0 - df_q * nd1) * Si / q2
+        bi = df_q * nd1 * (1.0 - inv_q2) + (1.0 - df_q * _norm_pdf(d1) / v) / q2
         Si_new = (X + rhs - bi * Si) / (1.0 - bi)
         if abs(Si_new - Si) < 1e-8 * X:
             return Si_new, q2
@@ -143,7 +162,7 @@ def solve_strike_for_delta(S, T, r, sigma, target_delta=0.95, q=0.0, kind="call"
     def delta_at(K):
         sig = sigma(K) if callable(sigma) else sigma
         sig = max(sig, 1e-8)  # floor keeps bracketing valid if a callable dips nonpositive at extremes
-        return bs_greeks(S, K, T, r, sig, q=q, kind=kind)["delta"]
+        return bs_delta(S, K, T, r, sig, q=q, kind=kind)
 
     if kind == "call":
         lo, hi = S * 1e-3, S * 5.0
