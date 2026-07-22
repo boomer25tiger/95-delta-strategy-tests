@@ -8,16 +8,12 @@ app that provides a historical simulator and a forward Monte Carlo.
 
 ## Why I built this
 
-I came across the 0.95-delta call as a proxy for owning the underlying. A deep
+While studying options greeks, I came across the 0.95-delta call as a proxy for owning a stock. A deep
 in-the-money call moves about 95 cents for every dollar the underlying moves, so a
 single contract reproduces almost all of the return exposure while tying up a fraction
 of what buying the shares outright would cost, leaving the remainder of the capital
-free for something else. Nearly full exposure at partial cost is what makes the
-structure attractive in the first place.
-
-What I wanted to know was whether that capital efficiency survives a long holding
-period. A deep in-the-money call that genuinely offers a cheaper route to owning an
-index should hold up as a standing substitute for owning one, across decades of real
+free for investment elsewhere. Given such an "efficient use of capital", I wanted to know whether that capital efficiency survives a long holding period. A deep in-the-money call that offers a cheaper route to owning an
+index, for example, should hold up as a standing substitute for owning one, across decades of real
 market history and after every cost I could model, so I tested it that way over two
 indices, two start years, two tenors, both tax treatments, and two ways of deploying
 the freed capital, always against simply buying and holding the same underlying.
