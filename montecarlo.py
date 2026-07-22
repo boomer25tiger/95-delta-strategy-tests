@@ -69,6 +69,30 @@ def run(n_paths=300, years=15.0, S0=100.0, mu=0.08, sigma=0.20, implied_vol=None
     return {sz: pd.DataFrame(v) for sz, v in rows.items()}
 
 
+def run_paths(n_paths=200, years=15.0, S0=100.0, mu=0.08, sigma=0.20, implied_vol=None,
+              r=0.04, q=0.006, mult=100.0, tenor=1.0, pmcc=False, is_future=False,
+              sizing="full", start_capital=100_000.0, seed=0, vparams=None):
+    """Single sizing, also returning the equity-curve matrix for a fan chart."""
+    vparams = vparams or vol.VOL_SCENARIOS["base"]
+    iv = sigma if implied_vol is None else implied_vol
+    paths = gbm_paths(S0, mu, sigma, years, n_paths, seed)
+    dates = pd.bdate_range("2000-01-03", periods=paths.shape[1])
+    curves, bh_curves, rows = [], [], []
+    for k in range(n_paths):
+        mkt = _market(paths[k], dates, iv, r, q, mult, is_future)
+        bh = bt.buy_and_hold(mkt, 2000, start_capital=start_capital)
+        res = bt.run_strategy(mkt, 2000, tenor, sizing, vparams, pmcc=pmcc,
+                              start_capital=start_capital)
+        eq = res["equity"]
+        curves.append(eq.values)
+        bh_curves.append(bh.values)
+        rows.append({"final": float(eq.iloc[-1]), "bh": float(bh.iloc[-1]),
+                     "min_eq": float(eq.min()), "lev": res["avg_leverage"],
+                     "cash_frac": res["cash_frac"]})
+    return {"df": pd.DataFrame(rows), "curves": np.array(curves),
+            "bh_curves": np.array(bh_curves), "dates": dates}
+
+
 def summarize(df, start_capital=100_000.0):
     f = df["final"].values
     ratio = df["final"].values / df["bh"].values
