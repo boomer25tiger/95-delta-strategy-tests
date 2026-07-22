@@ -14,6 +14,8 @@ not contaminate the leverage question; that constraint is studied separately in 
 historical layer at $10k.
 """
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -23,19 +25,43 @@ import vol
 TRADING_DAYS = 252
 
 
-def gbm_paths(S0, mu, sigma, years, n_paths, seed=0):
-    """Daily GBM: S_t = S_0 exp((mu - sigma^2/2) t + sigma W_t)."""
+def simulate_paths(S0, mu, sigma, years, n_paths, seed=0,
+                   jump_lambda=0.0, jump_mean=-0.01, jump_vol=0.08,
+                   match_total_vol=True):
+    """Daily paths under Merton jump-diffusion.
+
+    Leaving jump_lambda at zero reduces the process to pure geometric Brownian
+    motion and draws no extra randomness, so seeded paths stay bit-identical to
+    the diffusion-only case and earlier results remain valid.
+
+    Jump counts per step come from Poisson(lambda*dt). Because the sum of n
+    independent normal jump sizes is itself normal with mean n*jump_mean and
+    variance n*jump_vol^2, the whole jump contribution draws in one vectorized
+    step. The -lambda*k*dt term compensates the drift so expected total return
+    still equals mu.
+
+    match_total_vol shrinks the diffusion component so total annualized variance
+    still equals sigma^2, which separates the effect of jump shape from the
+    effect of simply adding variance.
+    """
     rng = np.random.default_rng(seed)
     n = int(round(years * TRADING_DAYS))
     dt = 1.0 / TRADING_DAYS
+    sd = sigma
+    if jump_lambda > 0.0 and match_total_vol:
+        jump_var = jump_lambda * (jump_mean * jump_mean + jump_vol * jump_vol)
+        if jump_var >= sigma * sigma:
+            raise ValueError("jump variance exceeds the total volatility target")
+        sd = math.sqrt(sigma * sigma - jump_var)
     z = rng.standard_normal((n_paths, n))
-    incr = (mu - 0.5 * sigma * sigma) * dt + sigma * math_sqrt(dt) * z
+    incr = (mu - 0.5 * sd * sd) * dt + sd * math.sqrt(dt) * z
+    if jump_lambda > 0.0:
+        k = math.exp(jump_mean + 0.5 * jump_vol * jump_vol) - 1.0
+        nj = rng.poisson(jump_lambda * dt, size=(n_paths, n))
+        z2 = rng.standard_normal((n_paths, n))
+        incr += nj * jump_mean + np.sqrt(nj) * jump_vol * z2 - jump_lambda * k * dt
     logs = np.log(S0) + np.cumsum(incr, axis=1)
     return np.hstack([np.full((n_paths, 1), S0), np.exp(logs)])
-
-
-def math_sqrt(x):
-    return float(np.sqrt(x))
 
 
 def _market(path, dates, implied_vol, r, q, mult, is_future):
@@ -50,10 +76,12 @@ def _market(path, dates, implied_vol, r, q, mult, is_future):
 
 def run(n_paths=300, years=15.0, S0=100.0, mu=0.08, sigma=0.20, implied_vol=None,
         r=0.04, q=0.006, mult=100.0, tenor=1.0, pmcc=False, is_future=False,
-        start_capital=100_000.0, seed=0, vparams=None, sizings=("matched", "full")):
+        start_capital=100_000.0, seed=0, vparams=None, sizings=("matched", "full"),
+        jump_lambda=0.0, jump_mean=-0.01, jump_vol=0.08):
     vparams = vparams or vol.VOL_SCENARIOS["base"]
     iv = sigma if implied_vol is None else implied_vol
-    paths = gbm_paths(S0, mu, sigma, years, n_paths, seed)
+    paths = simulate_paths(S0, mu, sigma, years, n_paths, seed,
+                           jump_lambda, jump_mean, jump_vol)
     dates = pd.bdate_range("2000-01-03", periods=paths.shape[1])
     rows = {sz: [] for sz in sizings}
     for k in range(n_paths):
@@ -71,11 +99,13 @@ def run(n_paths=300, years=15.0, S0=100.0, mu=0.08, sigma=0.20, implied_vol=None
 
 def run_paths(n_paths=200, years=15.0, S0=100.0, mu=0.08, sigma=0.20, implied_vol=None,
               r=0.04, q=0.006, mult=100.0, tenor=1.0, pmcc=False, is_future=False,
-              sizing="full", start_capital=100_000.0, seed=0, vparams=None):
+              sizing="full", start_capital=100_000.0, seed=0, vparams=None,
+              jump_lambda=0.0, jump_mean=-0.01, jump_vol=0.08):
     """Single sizing, also returning the equity-curve matrix for a fan chart."""
     vparams = vparams or vol.VOL_SCENARIOS["base"]
     iv = sigma if implied_vol is None else implied_vol
-    paths = gbm_paths(S0, mu, sigma, years, n_paths, seed)
+    paths = simulate_paths(S0, mu, sigma, years, n_paths, seed,
+                           jump_lambda, jump_mean, jump_vol)
     dates = pd.bdate_range("2000-01-03", periods=paths.shape[1])
     curves, bh_curves, rows = [], [], []
     for k in range(n_paths):
@@ -146,6 +176,17 @@ if __name__ == "__main__":
     print(f"  replacement full for comparison: median {sf['median']/CAP:.2f}x  "
           f"beatBH {sf['beat_bh']*100:.1f}%  P(ruin) {sf['ruin_90']*100:.1f}%")
 
+    print("\n[D] single-stock parameters, diffusion only against jumps at equal total vol")
+    print("    vol 35%, no dividend, 4 jumps/yr averaging -1% with 8% jump vol")
+    for label, jl in (("no jumps ", 0.0), ("jumps    ", 4.0)):
+        o = run(n_paths=N, years=YRS, sigma=0.35, q=0.0, start_capital=CAP,
+                jump_lambda=jl)
+        for sz in ("matched", "full"):
+            st = summarize(o[sz], CAP)
+            print(f"  {label} {sz:8} medVsBH {st['median_vs_bh']:5.2f}  "
+                  f"beatBH {st['beat_bh']*100:5.1f}%  P(<50%) {st['loss_50']*100:5.1f}%  "
+                  f"P(ruin) {st['ruin_90']*100:5.1f}%")
+
     print("\nsanity:")
     ck = []
     def c(name, ok, detail=""):
@@ -162,6 +203,18 @@ if __name__ == "__main__":
       f"{sf['p95']/sf['p5']:.0f}x vs {sm['p95']/sm['p5']:.0f}x")
     c("full-capital carries ruin risk, matched does not",
       sf["ruin_90"] > sm["ruin_90"], f"{sf['ruin_90']*100:.1f}% vs {sm['ruin_90']*100:.1f}%")
+    base_p = simulate_paths(100.0, 0.08, 0.20, 5.0, 400, 7)
+    jump_p = simulate_paths(100.0, 0.08, 0.20, 5.0, 400, 7, jump_lambda=4.0)
+    c("jump_lambda=0 leaves paths bit-identical to diffusion only",
+      float(np.abs(base_p - simulate_paths(100.0, 0.08, 0.20, 5.0, 400, 7,
+                                           jump_lambda=0.0)).max()) == 0.0)
+    lr_b = np.diff(np.log(base_p), axis=1).ravel()
+    lr_j = np.diff(np.log(jump_p), axis=1).ravel()
+    v_b, v_j = lr_b.std() * np.sqrt(TRADING_DAYS), lr_j.std() * np.sqrt(TRADING_DAYS)
+    c("jumps preserve total volatility", abs(v_j - v_b) < 0.02, f"{v_b:.3f} vs {v_j:.3f}")
+    k_b = float(((lr_b - lr_b.mean())**4).mean() / lr_b.var()**2 - 3.0)
+    k_j = float(((lr_j - lr_j.mean())**4).mean() / lr_j.var()**2 - 3.0)
+    c("jumps produce fat tails", k_j > k_b + 1.0, f"excess kurtosis {k_b:.2f} vs {k_j:.2f}")
     c("granularity not contaminating surviving paths",
       sm["cash_frac_alive"] < 0.01 and sf["cash_frac_alive"] < 0.01,
       f"alive-path cash {sm['cash_frac_alive']*100:.2f}% / {sf['cash_frac_alive']*100:.2f}% "
